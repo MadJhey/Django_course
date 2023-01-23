@@ -1,4 +1,6 @@
 import logging
+import os
+from itertools import islice
 
 from django.conf import settings
 from django.contrib import messages
@@ -89,7 +91,7 @@ class CoursesDetailView(TemplateView):
                 .select_related()
             )
             # 5 minutes
-            cache.set(f"feedback_list_{pk}", context["feedback_list"], timeout=300)
+            cache.set(f"feedback_list_{pk}", context["feedback_list"], timeout=4)
         else:
             context["feedback_list"] = cached_feedback
 
@@ -145,18 +147,44 @@ class DocSitePageView(TemplateView):
 
 
 class LogView(TemplateView):
+
     template_name = "mainapp/log_view.html"
 
     def get_context_data(self, **kwargs):
         context = super(LogView, self).get_context_data(**kwargs)
         log_slice = []
+        # with open(settings.LOG_FILE, "r") as log_file:
+        #     for i, line in enumerate(log_file):
+        #         if i == 1000:  # first 1000 lines
+        #             break
+        #         log_slice.insert(0, line)  # append at start
+        #     context["log"] = "".join(log_slice)
         with open(settings.LOG_FILE, "r") as log_file:
-            for i, line in enumerate(log_file):
-                if i == 1000:  # first 1000 lines
-                    break
-                log_slice.insert(0, line)  # append at start
+            for line in islice(self.reversed_lines(log_file), 1000):
+                log_slice.insert(0, line)
             context["log"] = "".join(log_slice)
         return context
+
+    def reversed_lines(self, file):
+        "Generate the lines of file in reverse order."
+        part = ""
+        for block in self.reversed_blocks(file):
+            for c in reversed(block):
+                if c == "\n" and part:
+                    yield part[::-1]
+                    part = ""
+                part += c
+        if part:
+            yield part[::-1]
+
+    def reversed_blocks(self, file, blocksize=4096):
+        file.seek(0, os.SEEK_END)
+        here = file.tell()
+        while 0 < here:
+            delta = min(blocksize, here)
+            here -= delta
+            file.seek(here, os.SEEK_SET)
+            yield file.read(delta)
 
 
 class LogDownloadView(UserPassesTestMixin, View):
